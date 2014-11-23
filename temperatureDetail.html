@@ -1,0 +1,250 @@
+<html>
+<head>
+	<script type="text/javascript" src="./sencha-touch-all.js"></script>
+	<link rel="stylesheet" type="text/css" href="./sencha-touch.css">	
+	<script type="text/javascript">
+
+	Ext.define("Weather",{
+	extend:"Ext.data.Model",
+	config:{
+		fields:["city","temp_min","temp_max","humidity"]
+	}
+	});
+
+	Ext.define("WeatherStore",{
+		extend:"Ext.data.Store",
+		config:{
+			autoload:false,
+			model:Weather,
+			proxy:{
+				type:"ajax",
+				url:"Weather",
+				reader:{
+					type:"json"
+				}
+			}
+		}
+	});
+
+	var weatherStore = Ext.create("WeatherStore");
+	weatherStore.load();
+
+	if(localStorage){
+		localStorage.getItem("")
+	}
+
+	Ext.define("City",{
+	extend:"Ext.data.Model",
+	config:{
+		fields:["name"]
+	}
+	});
+	Ext.define("CityStore",{
+		extend:"Ext.data.Store",
+		config:{
+			//fields:["name","age","country"],
+			autoload:false,
+			model:City,
+			proxy:{
+				type:"ajax",
+				url:"Cities",
+				reader:{
+					type:"json",
+					rootProperty:"citylist"
+				}
+			},
+			listeners :{
+				load : storeLocalStorage
+			}
+		}
+	});
+
+	Ext.define('Search', {
+	    extend: 'Ext.data.Model',
+	    config: {
+	        fields: ['city','temp_min','temp_max','humidity'],
+	        proxy: {
+	            type: 'sessionstorage',
+	            id  : 'citySearch'
+	        }
+	    }
+	});
+
+	var tempStore = Ext.create('Ext.data.Store', {
+		    model: "Search"
+		});
+
+	function storeCityDetail(json){		
+		
+		var obj = {city:"",temp_min:"",temp_max:"",humidity:""};
+		obj.city =  json.city;
+		obj.temp_min =  json.temp_min;
+		obj.temp_max =  json.temp_max;
+		obj.humidity =  json.humidity;
+		tempStore.load();
+		tempStore.add(obj);
+		tempStore.sync();
+	}
+
+	cityStore = Ext.create("CityStore");
+
+	if(localStorage){
+		console.log("local stoprage started");
+		if(localStorage.getItem("jsonData")){
+			console.log("local storage get itme called");
+			var jsonData = JSON.parse(localStorage.getItem("jsonData"));
+			var items = jsonData.items;
+			for(var i=0;i<items.length;i++){
+				cityStore.add({name:items[i].name});
+			}
+			//console.log(jsonData);
+		}else{
+			console.log("local storage not available");
+			cityStore = Ext.create("CityStore");
+			cityStore.load();
+		}
+	}
+
+	
+
+	//storeLocalStorage();
+
+	function storeLocalStorage(){
+		var data = cityStore.getData().items;
+		var items = [];
+		var jsonData ;
+		//console.log(data.length);
+		for(var i=0;i<data.length;i++){
+			items.push({name:data[i].data.name});
+		}
+		jsonData = {items:items};
+		localStorage.setItem("jsonData",JSON.stringify(jsonData));
+	}
+	Ext.application({
+		launch:function(){
+			Ext.create("Ext.Panel",{
+				id:"mainPanel",
+				fullscreen:true,
+				activeItem:0,
+				layout:{type:"card"},				
+				items:[
+					{xtype:"titlebar",id:"maintitlebar",title:"Cities",height:"10%",docked:"top",margin:"0%",width:"100%"},
+
+					{
+						xtype:"list",					
+						fullscreen:true,
+						store:cityStore,
+						itemTpl:"<b>{name}</b>",
+						listeners : {
+							 itemtap:  itemTapped, 
+							//itemdoubletap : itemDoubleTapped
+						}
+					
+					},
+					{
+						xtype:"panel",	
+						id:"innerPanel",
+						items:[
+							{
+								xtype:"titlebar",
+								id:"citydetailtitlebar",
+								title:"City",
+								height:"10%",
+								docked:"top",
+								margin:"0%",
+								width:"100%",
+								items:[
+									{
+										xtype:"button",
+										text:"Back",
+										listeners:{
+											tap:backButtonTapped
+										}
+									},
+									
+
+								]
+							},
+							{
+								
+								xtype: "list",							
+								id:"mintemplbl",
+								store : weatherStore,							
+								itemTpl : "<div> Min Temp : {temp_min}<br> Max Temp : {temp_max} <br>Humidity :{humidity}</div>"
+							}
+						]	
+					}
+				]
+
+			});
+		}
+
+	});
+	
+	function itemTapped(me, index, target, record, e){
+		console.log("itemTapped clicked");
+		store = me.getStore();
+		record = store.getAt(index);
+		city = record.get("name");
+		Ext.getCmp("citydetailtitlebar").setTitle(city);
+		weatherStore.removeAll();
+		ajaxRequest(record.get("name"));
+		weatherStore.load();
+		Ext.getCmp("maintitlebar").setHidden(true);
+		Ext.getCmp("mainPanel").setActiveItem(1);
+	}
+
+	function backButtonTapped(){
+		console.log("Back Button Taped");
+
+		Ext.getCmp("maintitlebar").setHidden(false);
+		Ext.getCmp("mainPanel").setActiveItem(0);
+	}
+
+
+	function ajaxRequest(city){
+
+		var isCityAvailable = tempStore.find("city",city);
+	//	console.log("Is city available");
+	//	console.log(isCityAvailable);
+		if(isCityAvailable == -1){
+			console.log("City tempreture data not exist :: Call Ajax");
+			Ext.Ajax.request({
+				url : "http://api.openweathermap.org/data/2.5/weather?q="+city,	
+				method : "GET",
+				useDefaultXhrHeader: false,
+				type: 'ajax',			
+				params : {},				
+				success : function(xhr){
+						var response = xhr.responseText;
+						var obj = Ext.JSON.decode(response);
+						var temp_min = obj.main.temp_min;
+						var temp_max = obj.main.temp_max;
+						var humidity = obj.main.humidity;
+						var city = obj.name;
+						
+						weatherStore.add({city:city,temp_min:temp_min,temp_max:temp_max,humidity:humidity});
+						storeCityDetail({city:city,temp_min:temp_min,temp_max:temp_max,humidity:humidity});
+						//console.log(obj.query.results.quote.Change);
+						//tradingStore.add({name:tradeScript,price:obj.query.results.quote.LastTradePriceOnly,change:obj.query.results.quote.Change,bgcolor:bgcolor});
+
+				}
+			});
+		}else{
+			console.log("City Detail exist");
+			var record = tempStore.findRecord("city",city);
+			console.log(record.raw);			
+			weatherStore.add({city:city,temp_min:record.raw.temp_min,temp_max:record.raw.temp_max,humidity:record.raw.humidity});	
+			//weatherStore.add({temp_min:record.raw.temp_min,temp_max:record.raw.temp_max,humidity:record.raw.humidity});
+			
+		}
+
+		
+	}
+
+	</script>
+</head>
+<body>
+
+</body>
+</html>
